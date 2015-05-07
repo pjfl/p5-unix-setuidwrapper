@@ -1,5 +1,6 @@
 Revision history for Unix::SetuidWrapper
 
+          - Updated prereqs
           - Example working
           - Builds role map
 

@@ -2,7 +2,7 @@ package Unix::SetuidWrapper;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 3 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 4 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( AS_PARA FAILED FALSE NUL OK SPC TRUE );
 use Class::Usul::Functions  qw( is_member loginid untaint_cmdline );
