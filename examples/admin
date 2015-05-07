@@ -1,0 +1,39 @@
+#!/usr/bin/env perl
+
+use lib;
+use strict;
+use warnings;
+
+use FindBin qw( $Bin );
+use File::Spec::Functions qw( catdir updir );
+
+lib->import( catdir( $Bin, updir, 'lib' ) );
+
+package Admin;
+
+use namespace::autoclean;
+
+use English qw( -no_match_vars );
+use Moo;
+
+extends q(Class::Usul::Programs);
+with    q(Unix::SetuidWrapper);
+
+our $VERSION = '0.1';
+
+sub test_cmd : method {
+   my $self = shift; $self->info( "User id $EFFECTIVE_USER_ID" ); return 0;
+}
+
+$INC{ 'Admin' } = __FILE__;
+
+package main;
+
+use Admin;
+
+my $app = Admin->new_with_options
+   (  config => { tempdir => 't', vardir => 't' }, noask  => 1, );
+
+$app->is_uid_zero or exec $app->untainted_cmd or die "Exec failed\n";
+
+exit $app->run;

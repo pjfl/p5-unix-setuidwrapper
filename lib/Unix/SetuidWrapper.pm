@@ -2,10 +2,10 @@ package Unix::SetuidWrapper;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 2 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 3 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( AS_PARA FAILED FALSE NUL OK SPC TRUE );
-use Class::Usul::Functions  qw( is_member loginid throw untaint_cmdline );
+use Class::Usul::Functions  qw( is_member loginid untaint_cmdline );
 use Class::Usul::Types      qw( ArrayRef HashRef Object SimpleStr );
 use Config;
 use English                 qw( -no_match_vars );
@@ -15,7 +15,7 @@ use List::Util              qw( first );
 use Moo::Role;
 
 # An instance of Class::Usul::Programs provides these
-requires qw( config debug_flag error extra_argv info locale log
+requires qw( config debug_flag error exit_usage extra_argv info locale log
              method new_with_options options output quiet run_cmd yorn );
 
 my $HASH_CHAR        = chr 35;
@@ -93,17 +93,34 @@ my $_find_method = sub {
           grep  { length } $io->chomp->getlines;
 };
 
+my $_substitute = sub {
+   my ($csrc, $prog) = @_;
+
+   my $sep   = $Config{path_sep};
+   my $nlibs = my @libs = split m{ $sep }mx, $ENV{PERL5LIB}, -1;
+   my $libs  = join ', ', map { '"'.$_.'"' } @libs;
+
+   $csrc =~ s{ \[% \s* executable_name \s* %\] }{$EXECUTABLE_NAME}imx;
+   $csrc =~ s{ \[% \s* program_name    \s* %\] }{$prog}imx;
+   $csrc =~ s{ \[% \s* nlibs           \s* %\] }{$nlibs}imx;
+   $csrc =~ s{ \[% \s* libs            \s* %\] }{$libs}imx;
+
+   return $csrc;
+};
+
 # Private methods
 my $_list_auth_files = sub {
    my ($self, $user) = @_; my $extn = $self->extension;
 
    return grep { $_->is_file }
           map  { $self->secsdir->catfile( "${_}${extn}" ) }
-                 $self->_role_map->{ $user };
+              @{ $self->_role_map->{ $user } };
 };
 
 my $_is_authorised = sub {
-   my ($self, $user) = @_; my $wanted = $self->method; $user or return FALSE;
+   my ($self, $user) = @_; $user or return FALSE;
+
+   my $wanted = $self->method; $wanted =~ s{ [\-] }{_}gmx;
 
    first { $wanted eq $_ } @{ $self->public_methods }
       and $self->_set__authorised_user( $user )
@@ -124,7 +141,7 @@ around 'new_with_options' => sub {
    $ENV{ENV   } = '${START[(_$- = 1)+(_ = 0)-(_$- != _${-%%*i*})]}';
    $ENV{PATH  } = '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
 
-   my $self = $orig->( @args ); $self->method or $self->_exit_usage( 0 );
+   my $self = $orig->( @args ); $self->method or $self->exit_usage( 0 );
 
    $EFFECTIVE_USER_ID == 0 or return $self; my $user = loginid $REAL_USER_ID;
 
@@ -140,20 +157,24 @@ around 'new_with_options' => sub {
 
 # Public methods
 sub init_suid_wrapper : method {
-   my $self  = shift;
-   my $conf  = $self->config;
-   my $prog  = $conf->suid or throw '';
-   my $file  = $prog->basename;
-   my $secd  = $self->secsdir;
-   my $extn  = $self->extension;
-   my $gid   = $conf->pathname->stat->{gid};
-   my $text  = 'Enable wrapper which allows limited access to some root '.
-               'only functions like password checking and user management. '.
-               'Necessary if the OS authentication store is used';
+   my $self = shift;
+   my $conf = $self->config;
+   my $prog = $conf->pathname;
+   my $file = $prog->basename;
+   my $bind = $prog->parent;
+   my $secd = $self->secsdir;
+   my $extn = $self->extension;
+   my $gid  = $conf->pathname->stat->{gid};
+   my $objf = $bind->catfile( ".${file}"   );
+   my $srcf = $bind->catfile( ".${file}.c" );
+   my $text = 'Enable wrapper which allows limited access to some root '.
+              'only functions like password checking and user management. '.
+              'Necessary if the OS authentication store is used';
 
    $self->output( $text, AS_PARA );
+   $self->info( 'Compiling [_1]', { args => [ $objf ] } );
+   $self->info( 'Secure directory [_1]', { args => [ $secd ] } );
    $self->yorn( '+Enable suid root', FALSE, TRUE, 0 ) or return OK;
-   $self->info( 'Restricting permissions on '.$secd->basename." and .${file}" );
    # Restrict access for these files to root only
    chown 0, $gid, $secd; chmod oct '0700', $secd;
 
@@ -161,20 +182,7 @@ sub init_suid_wrapper : method {
       chown 0, $gid, "${_}"; chmod oct '600', "${_}";
    }
 
-   my $sep   = $Config{path_sep};
-   my $nlibs = my @libs = split m{ $sep }mx, $ENV{PERL5LIB}, -1;
-   my $libs  = join ', ', map { '"'.$_.'"' } @libs;
-   my $csrc  = $SUID_WRAPPER_SRC;
-
-   $csrc =~ s{ \[% \s* executable_name \s* %\] }{$EXECUTABLE_NAME}imx;
-   $csrc =~ s{ \[% \s* program_name    \s* %\] }{$prog}imx;
-   $csrc =~ s{ \[% \s* nlibs           \s* %\] }{$nlibs}imx;
-   $csrc =~ s{ \[% \s* libs            \s* %\] }{$libs}imx;
-
-   my $bind  = $prog->parent;
-   my $objf  = $bind->catfile( ".${file}"   );
-   my $srcf  = $bind->catfile( ".${file}.c" ); $srcf->print( $csrc );
-
+   $srcf->print( $_substitute->( $SUID_WRAPPER_SRC, $prog ) );
    $self->run_cmd( [ 'make', ".${file}" ], { working_dir => $bind } );
    chown 0, $gid, $objf; chmod oct '04750', $objf; $srcf->unlink;
    return OK;
@@ -211,14 +219,42 @@ sub untainted_cmd {
 
 =head1 Name
 
-Unix::SetuidWrapper - One-line description of the modules purpose
+Unix::SetuidWrapper - Creates a setuid root wrapper for a Perl program
 
 =head1 Synopsis
 
-   use Unix::SetuidWrapper;
-   # Brief but working code examples
+   package Admin;
+
+   use namespace::autoclean;
+
+   use English qw( -no_match_vars );
+   use Moo;
+
+   extends q(Class::Usul::Programs);
+   with    q(Unix::SetuidWrapper);
+
+   our $VERSION = '0.1';
+
+   sub test_cmd : method {
+      my $self = shift; $self->info( "User id $EFFECTIVE_USER_ID" ); return 0;
+   }
+
+   $INC{ 'Admin' } = __FILE__;
+
+   package main;
+
+   use Admin;
+
+   my $app = Admin->new_with_options
+      (  config => { tempdir => 't', vardir => 't' }, noask  => 1, );
+
+   $app->is_uid_zero or exec $app->untainted_cmd or die "Exec failed\n";
+
+   exit $app->run;
 
 =head1 Description
+
+Creates a setuid root wrapper for a Perl program
 
 =head1 Configuration and Environment
 
@@ -226,17 +262,71 @@ Defines the following attributes;
 
 =over 3
 
+=item C<authorised_user>
+
+The name of the authorised user. This attribute is C<NULL> until the
+authorisation check is complete
+
+=item C<extension>
+
+The extension allied to files in L</secsdir>. Defaults to F<.sub>
+
+=item C<group_file>
+
+A L<File::DataClass::IO> object reference for the Unix group file
+
+=item C<passwd_file>
+
+A L<File::DataClass::IO> object reference for the Unix password file
+
+=item C<public_methods>
+
+These methods are allowed to executed by anyone with execute permission on
+the original script
+
+=item C<secsdir>
+
+The directory containing the files used to restrict access to methods. Each
+file is named after a Unix group. If the method the user wants to run is in
+one of the files for which the user is in that group then the method execution
+is allowed, otherwise permission is denied
+
 =back
 
 =head1 Subroutines/Methods
 
+=head2 init_suid_wrapper
+
+This method needs to be run a the super-user. It writes out the C source code
+of the wrapper, compiles it, and sets it to run C<setuid> root. It also
+restricts permission on L</secsdir> and it's contents so that only root
+can access them
+
+=head2 is_uid_zero
+
+Returns true if the effective user id is zero, false otherwise
+
+=head2 untainted_cmd
+
+Returns the command line used to invoke the script with the script name
+replaced with that of the C<setuid> wrapper. The values on the command line are
+untainted
+
 =head1 Diagnostics
+
+None
 
 =head1 Dependencies
 
 =over 3
 
 =item L<Class::Usul>
+
+=item L<File::DataClass>
+
+=item L<File::UnixAuth>
+
+=item L<Moo>
 
 =back
 

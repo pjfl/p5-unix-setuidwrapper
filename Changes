@@ -1,5 +1,6 @@
 Revision history for Unix::SetuidWrapper
 
+          - Example working
           - Builds role map
 
 0.1.1     2015-05-05 13:22:37
