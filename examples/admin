@@ -4,6 +4,7 @@
 #   perl examples/admin -nc init_suid_wrapper
 # Thereafter run as a normal user
 #   perl examples/admin -nc test_cmd
+#   perl examples/admin -nc not_allowed
 
 use lib;
 use strict;
@@ -12,9 +13,9 @@ use warnings;
 use FindBin qw( $Bin );
 use File::Spec::Functions qw( catdir updir );
 
-lib->import( catdir( $Bin, updir, 'lib' ) );
+lib->import( catdir( $Bin, updir, 'lib' ) ); # So that Perl can find U::SW
 
-package Admin;
+package YourApp::Admin; # This would be in it's own lib file
 
 use namespace::autoclean;
 
@@ -26,19 +27,25 @@ with    q(Unix::SetuidWrapper);
 
 our $VERSION = '0.1';
 
+# Add your own methods here. Your can call them from the command line
 sub test_cmd : method {
    my $self = shift; $self->info( "User id $EFFECTIVE_USER_ID" ); return 0;
 }
 
-$INC{ 'Admin' } = __FILE__;
+sub not_allowed : method {
+   my $self = shift; $self->info( "User id $EFFECTIVE_USER_ID" ); return 0;
+}
 
-package main;
+$INC{ 'YourApp::Admin' } = __FILE__;
 
-use Admin;
+package main; # This script would be in the bin directory
 
+use YourApp::Admin;
+
+# This is only needed for interactive sessions
 $ENV{ENV} = '${START[(_$- = 1)+(_ = 0)-(_$- != _${-%%*i*})]}';
 
-my $app = Admin->new_with_options
+my $app = YourApp::Admin->new_with_options
    (  config => { tempdir => 't', vardir => 't' }, noask  => 1, );
 
 $app->is_uid_zero or exec $app->wrapped_cmdline or exit 1;

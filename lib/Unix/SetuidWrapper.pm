@@ -2,7 +2,7 @@ package Unix::SetuidWrapper;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 5 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 6 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( AS_PARA FAILED FALSE NUL OK SPC TRUE );
 use Class::Usul::Functions  qw( is_member loginid untaint_cmdline );
@@ -115,7 +115,7 @@ my $_substitute = sub {
 my $_list_auth_files = sub {
    my ($self, $user) = @_; my $extn = $self->secure_extension;
 
-   return grep { $_->is_file }
+   return grep { $_->exists && $_->is_file }
           map  { $self->secure_dir->catfile( "${_}${extn}" ) }
               @{ $self->_role_map->{ $user } };
 };
@@ -170,9 +170,9 @@ sub init_suid_wrapper : method {
    my $objf = $bind->catfile( ".${file}"   );
    my $srcf = $bind->catfile( ".${file}.c" );
    my @libs = $_split_perl5lib->(); shift @libs;
-   my $text = 'Enable wrapper which allows limited access to some root '.
-              'only functions like password checking and user management. '.
-              'Necessary if the OS authentication store is used';
+   my $text = 'Enable wrapper which allows limited access to some root '
+            . 'only functions like password checking and user management. '
+            . 'Necessary if the OS authentication store is used';
 
    $self->output( $text, AS_PARA );
    $self->output( 'Compiling [_1]',        { args => [ $objf ] } );
@@ -191,7 +191,7 @@ sub init_suid_wrapper : method {
 
    # Create the setuid root binary wrapper
    $srcf->print( $_substitute->( $SUID_WRAPPER_SRC, $prog ) );
-   $self->run_cmd( [ 'make', ".${file}" ], { working_dir => $bind } );
+   $self->run_cmd( [ 'make',  ".${file}" ], { working_dir => $bind } );
    chown 0, $gid, $objf; chmod oct '04750', $objf; $srcf->unlink;
    return OK;
 }
@@ -250,7 +250,8 @@ Unix::SetuidWrapper - Creates a setuid root wrapper for a Perl program
 
 =head1 Description
 
-Creates a setuid root wrapper for a Perl program
+Creates a setuid root wrapper for a Perl program.  See the example file
+from which the synopsis was taken
 
 =head1 Configuration and Environment
 

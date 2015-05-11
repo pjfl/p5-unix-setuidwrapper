@@ -1,5 +1,6 @@
 Revision history for Unix::SetuidWrapper
 
+          - Added comments to example
           - Shaved the Yak
           - Untainted_cmd now returns a list
           - Updated prereqs
