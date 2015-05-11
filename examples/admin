@@ -1,5 +1,10 @@
 #!/usr/bin/env perl
 
+# Run once as root with
+#   perl examples/admin -nc init_suid_wrapper
+# Thereafter run as a normal user
+#   perl examples/admin -nc test_cmd
+
 use lib;
 use strict;
 use warnings;
@@ -16,7 +21,7 @@ use namespace::autoclean;
 use English qw( -no_match_vars );
 use Moo;
 
-extends q(Class::Usul::Programs);
+extends q(Class::Usul::Programs); # Framework for command line programs
 with    q(Unix::SetuidWrapper);
 
 our $VERSION = '0.1';
@@ -31,9 +36,11 @@ package main;
 
 use Admin;
 
+$ENV{ENV} = '${START[(_$- = 1)+(_ = 0)-(_$- != _${-%%*i*})]}';
+
 my $app = Admin->new_with_options
    (  config => { tempdir => 't', vardir => 't' }, noask  => 1, );
 
-$app->is_uid_zero or exec $app->untainted_cmd or die "Exec failed\n";
+$app->is_uid_zero or exec $app->wrapped_cmdline or exit 1;
 
 exit $app->run;

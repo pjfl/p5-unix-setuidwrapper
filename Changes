@@ -1,5 +1,7 @@
 Revision history for Unix::SetuidWrapper
 
+          - Shaved the Yak
+          - Untainted_cmd now returns a list
           - Updated prereqs
           - Example working
           - Builds role map
