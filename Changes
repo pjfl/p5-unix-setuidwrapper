@@ -1,5 +1,6 @@
 Revision history for Unix::SetuidWrapper
 
+          - Shaved the Yak
           - Added badges and public repos
           - Secure directory passed via binary not from config
           - Added comments to example

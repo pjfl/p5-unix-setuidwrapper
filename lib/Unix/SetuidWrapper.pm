@@ -2,7 +2,7 @@ package Unix::SetuidWrapper;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 7 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 8 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( AS_PARA FAILED FALSE NUL OK SPC TRUE );
 use Class::Usul::Functions  qw( io is_member loginid untaint_path );
@@ -15,7 +15,7 @@ use List::Util              qw( first );
 use Moo::Role;
 
 # An instance of Class::Usul::Programs provides these
-requires qw( config error exit_usage info method new_with_options
+requires qw( config exit_usage fatal info method new_with_options
              output run_cmd untainted_argv yorn );
 
 my $HASH_CHAR        = chr 35;
@@ -79,17 +79,11 @@ has '_unix_passwd'     => is => 'lazy', isa => Object, builder => sub {
 
 # Private functions
 my $_find_method = sub {
-   my ($wanted, $io) = @_;
+   my ($want, $io) = @_;
 
-   return first { $_ eq $wanted }
+   return first { $_ eq $want }
           map   { (split m{ \s+ $HASH_CHAR }mx, "${_} ${HASH_CHAR}")[ 0 ] }
           grep  { length } $io->chomp->getlines;
-};
-
-my $_is_secure = sub {
-   my $io = shift; my $stat = $io->stat; my $mode = $stat->{mode} & 0777;
-
-   return ($stat->{uid} == 0 && $mode == 0600) ? TRUE : FALSE;
 };
 
 my $_split_perl5lib = sub {
@@ -99,31 +93,32 @@ my $_split_perl5lib = sub {
    return $nlibs, @libs;
 };
 
+my $_stats = sub {
+   my $stat = $_[ 0 ]->stat; return $stat->{uid}, $stat->{mode} & 0777;
+};
+
+my $_is_secure_dir = sub {
+   my ($uid, $mode) = $_stats->( $_[ 0 ] );
+
+   return ($uid == 0 && $mode == 0700) ? TRUE : FALSE;
+};
+
+my $_is_secure_file = sub {
+   my ($uid, $mode) = $_stats->( $_[ 0 ] );
+
+   return ($uid == 0 && $mode == 0600) ? TRUE : FALSE;
+};
+
 # Private methods
 my $_auth_files = sub {
    my ($self, $secd, $user) = @_; my $extn = $self->config_file_extn;
 
-   $secd = $secd ? io( $secd ) : $self->secure_dir;
+   $_is_secure_dir->( $secd = $secd ? io( $secd ) : $self->secure_dir )
+      or $self->fatal( 'Directory [_1] insecure', { args => [ $secd ] } );
 
-   return grep { $_->exists && $_->is_file && $_is_secure->( $_ ) }
+   return grep { $_->exists && $_->is_file && $_is_secure_file->( $_ ) }
           map  { $secd->catfile( "${_}${extn}" ) }
               @{ $self->role_map->{ $user } };
-};
-
-my $_is_setuid_authorised = sub {
-   my ($self, $secd, $user) = @_; $user or return FALSE;
-
-   my $wanted = $self->method; $wanted =~ s{ [\-] }{_}gmx;
-
-   first { $wanted eq $_ } @{ $self->public_methods }
-      and $self->_set__authorised_user( $user )
-      and return TRUE;
-
-   first { $_find_method->( $wanted, $_ ) } $self->$_auth_files( $secd, $user )
-      and $self->_set__authorised_user( $user )
-      and return TRUE;
-
-   return FALSE;
 };
 
 my $_get_c_src = sub {
@@ -142,6 +137,22 @@ my $_get_c_src = sub {
    return $csrc;
 };
 
+my $_is_setuid_authorised = sub {
+   my ($self, $secd, $user, $want) = @_;
+
+   $user or return FALSE; $want =~ s{ [\-] }{_}gmx;
+
+   first { $want eq $_ } @{ $self->public_methods }
+      and $self->_set__authorised_user( $user )
+      and return TRUE;
+
+   first { $_find_method->( $want, $_ ) } $self->$_auth_files( $secd, $user )
+      and $self->_set__authorised_user( $user )
+      and return TRUE;
+
+   return FALSE;
+};
+
 # Construction
 around 'new_with_options' => sub {
    my ($orig, @args) = @_;
@@ -150,15 +161,15 @@ around 'new_with_options' => sub {
    $ENV{PATH  } = '/usr/local/sbin:/usr/local/bin:/usr/sbin:'
                 . '/usr/bin:/sbin:/bin';
 
-   my $secd = untaint_path( $ENV{SECURE_DIR} );
-   my $self = $orig->( @args ); $self->method or $self->exit_usage( 0 );
+   my $user = loginid $REAL_USER_ID;
+   my $secd = untaint_path $ENV{SECURE_DIR};
+   my $self = $orig->( @args );
+   my $want = $self->method or $self->exit_usage( 0 );
 
-   $EFFECTIVE_USER_ID == 0 or return $self; my $user = loginid $REAL_USER_ID;
+   $EFFECTIVE_USER_ID == 0 or return $self;
 
-   unless ($self->$_is_setuid_authorised( $secd, $user )) {
-      $self->error( 'Access denied to '.$self->method." for ${user}" );
-      exit FAILED;
-   }
+   $self->$_is_setuid_authorised( $secd, $user, $want ) or $self->fatal
+      ( 'Access denied to [_1] for [_2]', { args => [ $want, $user ] } );
 
    $REAL_USER_ID = 0; $REAL_GROUP_ID = 0;
 
