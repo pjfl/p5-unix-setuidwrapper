@@ -19,13 +19,13 @@ package YourApp::Admin; # This would be in it's own lib file
 
 use namespace::autoclean;
 
+our $VERSION = '0.1';
+
 use English qw( -no_match_vars );
 use Moo;
 
 extends q(Class::Usul::Programs); # Framework for command line programs
 with    q(Unix::SetuidWrapper);
-
-our $VERSION = '0.1';
 
 # Add your own methods here. Your can call them from the command line
 sub test_cmd : method {

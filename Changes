@@ -1,5 +1,7 @@
 Revision history for Unix::SetuidWrapper
 
+          - Added badges and public repos
+          - Secure directory passed via binary not from config
           - Added comments to example
           - Shaved the Yak
           - Untainted_cmd now returns a list

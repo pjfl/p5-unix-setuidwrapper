@@ -2,10 +2,10 @@ package Unix::SetuidWrapper;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 6 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 7 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( AS_PARA FAILED FALSE NUL OK SPC TRUE );
-use Class::Usul::Functions  qw( is_member loginid untaint_cmdline );
+use Class::Usul::Functions  qw( io is_member loginid untaint_path );
 use Class::Usul::Types      qw( ArrayRef HashRef Object SimpleStr );
 use Config;
 use English                 qw( -no_match_vars );
@@ -22,64 +22,59 @@ my $HASH_CHAR        = chr 35;
 my $SUID_WRAPPER_SRC = do { local $RS = undef; <DATA> };
 
 # Attribute constructors
-my $_build_role_map = sub {
+my $_build__role_map = sub {
    my $self       = shift;
    my $group_data = $self->_unix_group->load->{group};
    my $user_data  = $self->_unix_passwd->load->{passwd};
-   my $gmap       = {};
-   my $umap       = {};
+   my $group_map  = {};
+   my $role_map   = {};
 
    for my $group (keys %{ $group_data }) {
-      $gmap->{ $group_data->{ $group }->{gid} } = $group;
+      $group_map->{ $group_data->{ $group }->{gid} } = $group;
    }
 
    for my $user (keys %{ $user_data }) {
-      $umap->{ $user } = [ $gmap->{ $user_data->{ $user }->{pgid} } ];
+      $role_map->{ $user } = [ $group_map->{ $user_data->{ $user }->{pgid} } ];
    }
 
    for my $group (keys %{ $group_data }) {
       for my $user (@{ $group_data->{ $group }->{members} }) {
-         exists $umap->{ $user } or next;
-         not is_member $group, $umap->{ $user }
-                   and push @{ $umap->{ $user } }, $group;
+         exists $role_map->{ $user } or next;
+         not is_member $group, $role_map->{ $user }
+                   and push @{ $role_map->{ $user } }, $group;
       }
    }
 
-   return $umap;
+   return $role_map;
 };
 
 # Public attributes
-has 'group_file'       => is => 'lazy', isa => File,
-   builder             => sub { [ NUL, 'etc', 'group' ] }, coerce => TRUE;
-
-has 'passwd_file'      => is => 'lazy', isa => File,
-   builder             => sub { [ NUL, 'etc', 'passwd' ] }, coerce => TRUE;
+has 'config_file_extn' => is => 'ro',   isa => SimpleStr, default => '.sub';
 
 has 'public_methods'   => is => 'ro',   isa => ArrayRef,  default => sub {
    [ qw( authenticate dump_config_attr dump_self list_methods ) ] };
-
-has 'secure_dir'       => is => 'lazy', isa => Directory, coerce => TRUE,
-   default             => sub { [ $_[ 0 ]->config->vardir, 'secure' ] };
-
-has 'secure_extension' => is => 'ro',   isa => SimpleStr, default => '.sub';
 
 # Private attributes
 has '_authorised_user' => is => 'rwp',  isa => SimpleStr, default => NUL,
    reader              => 'authorised_user';
 
 has '_role_map'        => is => 'lazy', isa => HashRef,
-   builder             => $_build_role_map;
+   builder             => $_build__role_map, reader => 'role_map';
+
+has '_secure_dir'      => is => 'lazy', isa => Directory, coerce => TRUE,
+   builder             => sub { [ $_[ 0 ]->config->vardir, 'secure' ] },
+   reader              => 'secure_dir';
 
 has '_unix_group'      => is => 'lazy', isa => Object, builder => sub {
    File::UnixAuth->new( builder     => $_[ 0 ],
                         cache_class => 'none',
-                        path        => $_[ 0 ]->group_file,
+                        path        => io( [ NUL, 'etc', 'group' ] ),
                         source_name => 'group', ) };
 
 has '_unix_passwd'     => is => 'lazy', isa => Object, builder => sub {
    File::UnixAuth->new( builder     => $_[ 0 ],
                         cache_class => 'none',
-                        path        => $_[ 0 ]->passwd_file,
+                        path        => io( [ NUL, 'etc', 'passwd' ] ),
                         source_name => 'passwd', ) };
 
 # Private functions
@@ -91,6 +86,12 @@ my $_find_method = sub {
           grep  { length } $io->chomp->getlines;
 };
 
+my $_is_secure = sub {
+   my $io = shift; my $stat = $io->stat; my $mode = $stat->{mode} & 0777;
+
+   return ($stat->{uid} == 0 && $mode == 0600) ? TRUE : FALSE;
+};
+
 my $_split_perl5lib = sub {
    my $sep   = $Config{path_sep};
    my $nlibs = my @libs = split m{ $sep }mx, $ENV{PERL5LIB}, -1;
@@ -98,30 +99,19 @@ my $_split_perl5lib = sub {
    return $nlibs, @libs;
 };
 
-my $_substitute = sub {
-   my ($csrc,  $prog) = @_;
-   my ($nlibs, @libs) = $_split_perl5lib->();
-   my $libs           = join ', ', map { '"'.$_.'"' } @libs;
-
-   $csrc =~ s{ \[% \s* executable_name \s* %\] }{$EXECUTABLE_NAME}imx;
-   $csrc =~ s{ \[% \s* program_name    \s* %\] }{$prog}imx;
-   $csrc =~ s{ \[% \s* nlibs           \s* %\] }{$nlibs}imx;
-   $csrc =~ s{ \[% \s* libs            \s* %\] }{$libs}imx;
-
-   return $csrc;
-};
-
 # Private methods
-my $_list_auth_files = sub {
-   my ($self, $user) = @_; my $extn = $self->secure_extension;
+my $_auth_files = sub {
+   my ($self, $secd, $user) = @_; my $extn = $self->config_file_extn;
 
-   return grep { $_->exists && $_->is_file }
-          map  { $self->secure_dir->catfile( "${_}${extn}" ) }
-              @{ $self->_role_map->{ $user } };
+   $secd = $secd ? io( $secd ) : $self->secure_dir;
+
+   return grep { $_->exists && $_->is_file && $_is_secure->( $_ ) }
+          map  { $secd->catfile( "${_}${extn}" ) }
+              @{ $self->role_map->{ $user } };
 };
 
 my $_is_setuid_authorised = sub {
-   my ($self, $user) = @_; $user or return FALSE;
+   my ($self, $secd, $user) = @_; $user or return FALSE;
 
    my $wanted = $self->method; $wanted =~ s{ [\-] }{_}gmx;
 
@@ -129,11 +119,27 @@ my $_is_setuid_authorised = sub {
       and $self->_set__authorised_user( $user )
       and return TRUE;
 
-   first { $_find_method->( $wanted, $_ ) } $self->$_list_auth_files( $user )
+   first { $_find_method->( $wanted, $_ ) } $self->$_auth_files( $secd, $user )
       and $self->_set__authorised_user( $user )
       and return TRUE;
 
    return FALSE;
+};
+
+my $_get_c_src = sub {
+   my ($self, $prog)  = @_;
+   my $csrc           = $SUID_WRAPPER_SRC;
+   my $secd           = $self->secure_dir;
+   my ($nlibs, @libs) = $_split_perl5lib->();
+   my $libs           = join ', ', map { '"'.$_.'"' } @libs;
+
+   $csrc =~ s{ \[% \s* executable_name \s* %\] }{$EXECUTABLE_NAME}gimx;
+   $csrc =~ s{ \[% \s* libs            \s* %\] }{$libs}gimx;
+   $csrc =~ s{ \[% \s* nlibs           \s* %\] }{$nlibs}gimx;
+   $csrc =~ s{ \[% \s* program_name    \s* %\] }{$prog}gimx;
+   $csrc =~ s{ \[% \s* secure_dir      \s* %\] }{$secd}gimx;
+
+   return $csrc;
 };
 
 # Construction
@@ -141,13 +147,15 @@ around 'new_with_options' => sub {
    my ($orig, @args) = @_;
 
    $ENV{CDPATH} = NUL; # For taint mode
-   $ENV{PATH} = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+   $ENV{PATH  } = '/usr/local/sbin:/usr/local/bin:/usr/sbin:'
+                . '/usr/bin:/sbin:/bin';
 
+   my $secd = untaint_path( $ENV{SECURE_DIR} );
    my $self = $orig->( @args ); $self->method or $self->exit_usage( 0 );
 
    $EFFECTIVE_USER_ID == 0 or return $self; my $user = loginid $REAL_USER_ID;
 
-   unless ($self->$_is_setuid_authorised( $user )) {
+   unless ($self->$_is_setuid_authorised( $secd, $user )) {
       $self->error( 'Access denied to '.$self->method." for ${user}" );
       exit FAILED;
    }
@@ -165,7 +173,7 @@ sub init_suid_wrapper : method {
    my $bind = $prog->parent;
    my $file = $prog->basename;
    my $secd = $self->secure_dir;
-   my $extn = $self->secure_extension;
+   my $extn = $self->config_file_extn;
    my $gid  = $conf->pathname->stat->{gid};
    my $objf = $bind->catfile( ".${file}"   );
    my $srcf = $bind->catfile( ".${file}.c" );
@@ -179,8 +187,8 @@ sub init_suid_wrapper : method {
    $self->output( 'Perl [_1]',             { args => [ $EXECUTABLE_NAME ] } );
    $self->output( 'Libs [_1]',             { args => [ $_ ] } ) for (@libs);
    $self->output( 'Secure directory [_1]', { args => [ $secd ] } );
-   $self->yorn( '+Enable suid root', FALSE, TRUE, 0 ) or return OK;
-   $self->info( 'Compiling [_1]', { args => [ $objf ], quiet => TRUE } );
+   $self->yorn  ( '+Enable suid root', FALSE, TRUE, 0 ) or return OK;
+   $self->info  ( 'Compiling [_1]', { args => [ $objf ], quiet => TRUE } );
 
    # Restrict access for these files to root only
    chown 0, $gid, $secd; chmod oct '0700', $secd;
@@ -190,7 +198,7 @@ sub init_suid_wrapper : method {
    }
 
    # Create the setuid root binary wrapper
-   $srcf->print( $_substitute->( $SUID_WRAPPER_SRC, $prog ) );
+   $srcf->print( $self->$_get_c_src( $prog ) );
    $self->run_cmd( [ 'make',  ".${file}" ], { working_dir => $bind } );
    chown 0, $gid, $objf; chmod oct '04750', $objf; $srcf->unlink;
    return OK;
@@ -213,6 +221,14 @@ sub wrapped_cmdline {
 
 =encoding utf-8
 
+=begin html
+
+<a href="https://travis-ci.org/pjfl/p5-unix-setuidwrapper"><img src="https://travis-ci.org/pjfl/p5-unix-setuidwrapper.svg?branch=master" alt="Travis CI Badge"></a>
+<a href="http://badge.fury.io/pl/Unix-SetuidWrapper"><img src="https://badge.fury.io/pl/Unix-SetuidWrapper.svg" alt="CPAN Badge"></a>
+<a href="http://cpants.cpanauthors.org/dist/Unix-SetuidWrapper"><img src="http://cpants.cpanauthors.org/dist/Unix-SetuidWrapper.png" alt="Kwalitee Badge"></a>
+
+=end html
+
 =head1 Name
 
 Unix::SetuidWrapper - Creates a setuid root wrapper for a Perl program
@@ -223,13 +239,13 @@ Unix::SetuidWrapper - Creates a setuid root wrapper for a Perl program
 
    use namespace::autoclean;
 
+   our $VERSION = '0.1';
+
    use English qw( -no_match_vars );
    use Moo;
 
    extends q(Class::Usul::Programs);
    with    q(Unix::SetuidWrapper);
-
-   our $VERSION = '0.1';
 
    sub test_cmd : method {
       my $self = shift; $self->info( "User id $EFFECTIVE_USER_ID" ); return 0;
@@ -253,6 +269,20 @@ Unix::SetuidWrapper - Creates a setuid root wrapper for a Perl program
 Creates a setuid root wrapper for a Perl program.  See the example file
 from which the synopsis was taken
 
+Run once as root with
+
+   perl examples/admin -nc init_suid_wrapper
+
+This creates the setuid root wrapper as a dotfile in the examples directory.
+Thereafter run as a normal user
+
+   perl examples/admin -nc test_cmd
+   perl examples/admin -nc not_allowed
+
+If the normal user executing the commands is in the C<users> group then the
+first command will succeed, the second command should generate the
+permissioned denied response
+
 =head1 Configuration and Environment
 
 Defines the following attributes;
@@ -264,13 +294,9 @@ Defines the following attributes;
 The name of the authorised user. This attribute is C<NULL> until the
 authorisation check is complete
 
-=item C<group_file>
+=item C<config_file_extn>
 
-A L<File::DataClass::IO> object reference for the Unix group file
-
-=item C<passwd_file>
-
-A L<File::DataClass::IO> object reference for the Unix password file
+The extension applied to files in L</secure_dir>. Defaults to F<.sub>
 
 =item C<public_methods>
 
@@ -283,10 +309,6 @@ The directory containing the files used to restrict access to methods. Each
 file is named after a Unix group. If the method the user wants to run is in
 one of the files and the user is in that group then the method execution
 is allowed, otherwise permission is denied
-
-=item C<secure_extension>
-
-The extension applied to files in L</secure_dir>. Defaults to F<.sub>
 
 =back
 
@@ -369,6 +391,7 @@ __DATA__
 
 #define EXECUTABLE_NAME "[% executable_name %]"
 #define PROGRAM_NAME    "[% program_name %]"
+#define SECURE_DIR      "[% secure_dir %]"
 
 static int  nlibs   = [% nlibs %];
 static char *libs[] = { [% libs %] };
@@ -387,5 +410,6 @@ main( ac, av ) char **av; {
    for (i = 1; i < ac; i++) args[ offset + i ] = av[ i ];
 
    args[ offset + ac ] = (char *) NULL;
+   setenv( "SECURE_DIR",  SECURE_DIR, 1 );
    execv( EXECUTABLE_NAME, args );
 }
