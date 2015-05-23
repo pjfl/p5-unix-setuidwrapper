@@ -7,6 +7,8 @@ META.yml
 README
 SIGNATURE
 examples/admin
+examples/secure/root.sub
+examples/secure/users.sub
 lib/Unix/SetuidWrapper.pm
 t/01always_pass.t
 t/02pod.t
@@ -18,4 +20,6 @@ t/10test_script.t
 t/admin.log
 t/boilerplate.pm
 t/script.log
+t/secure/root.sub
+t/secure/users.sub
 t/users.sub

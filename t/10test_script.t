@@ -16,26 +16,27 @@ use_ok 'Unix::SetuidWrapper';
    $INC{ 'TestProg.pm' } = __FILE__;
 }
 
-my $group = getgrgid( $GID );
-my $subf  = io( [ 't', "${group}.sub" ] );
+my $group = getgrgid( $GID ); my $subf = io[ 't', "${group}.sub" ];
 
 $subf->println( 'init_suid_wrapper' );
 
-my $wrapper = TestProg->new( config  => { tempdir => 't', vardir => 't' },
-                             noask   => 1,
-                             secsdir => 't', );
+my $wrapper = TestProg->new( config     => { tempdir => 't', vardir => 't' },
+                             noask      => 1,
+                             secure_dir => 't', );
 
-ok exists $wrapper->_role_map->{root}, 'Root exists';
+ok exists $wrapper->role_map->{root}, 'Root exists';
 
-$wrapper = TestProg->new_with_options( config  => { tempdir => 't',
-                                                    vardir  => 't' },
-                                       method  => 'init_suid_wrapper',
-                                       noask   => 1,
-                                       secsdir => 't');
+$wrapper = TestProg->new_with_options( config     => { tempdir => 't',
+                                                       vardir  => 't' },
+                                       method     => 'init_suid_wrapper',
+                                       noask      => 1,
+                                       secure_dir => 't', );
 
-is $wrapper->secsdir->pathname, io( [ 't' ] )->pathname, 'Secure dir';
+is $wrapper->secure_dir->pathname, io( [ 't' ] )->pathname, 'Secure dir';
 
-like $wrapper->untainted_cmd, qr{ \.10test_script\.t }mx, 'Untainted cmd';
+my @args = $wrapper->wrapped_cmdline;
+
+like $args[ 0 ], qr{ \.10test_script\.t }mx, 'Untainted cmd';
 
 done_testing;
 

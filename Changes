@@ -1,5 +1,7 @@
 Revision history for Unix::SetuidWrapper
 
+          - Fixed creating and removing t/secure
+            No left over root owned directory
           - Shaved the Yak
           - Added badges and public repos
           - Secure directory passed via binary not from config

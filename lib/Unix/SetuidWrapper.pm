@@ -2,7 +2,7 @@ package Unix::SetuidWrapper;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 8 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 9 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( AS_PARA FAILED FALSE NUL OK SPC TRUE );
 use Class::Usul::Functions  qw( io is_member loginid untaint_path );
@@ -54,16 +54,15 @@ has 'config_file_extn' => is => 'ro',   isa => SimpleStr, default => '.sub';
 has 'public_methods'   => is => 'ro',   isa => ArrayRef,  default => sub {
    [ qw( authenticate dump_config_attr dump_self list_methods ) ] };
 
+has 'secure_dir'       => is => 'lazy', isa => Directory, coerce => TRUE,
+   builder             => sub { [ $_[ 0 ]->config->vardir, 'secure' ] };
+
 # Private attributes
 has '_authorised_user' => is => 'rwp',  isa => SimpleStr, default => NUL,
    reader              => 'authorised_user';
 
 has '_role_map'        => is => 'lazy', isa => HashRef,
    builder             => $_build__role_map, reader => 'role_map';
-
-has '_secure_dir'      => is => 'lazy', isa => Directory, coerce => TRUE,
-   builder             => sub { [ $_[ 0 ]->config->vardir, 'secure' ] },
-   reader              => 'secure_dir';
 
 has '_unix_group'      => is => 'lazy', isa => Object, builder => sub {
    File::UnixAuth->new( builder     => $_[ 0 ],
@@ -140,7 +139,7 @@ my $_get_c_src = sub {
 my $_is_setuid_authorised = sub {
    my ($self, $secd, $user, $want) = @_;
 
-   $user or return FALSE; $want =~ s{ [\-] }{_}gmx;
+  ($user and $want) or return FALSE; $want =~ s{ [\-] }{_}gmx;
 
    first { $want eq $_ } @{ $self->public_methods }
       and $self->_set__authorised_user( $user )
@@ -202,6 +201,7 @@ sub init_suid_wrapper : method {
    $self->info  ( 'Compiling [_1]', { args => [ $objf ], quiet => TRUE } );
 
    # Restrict access for these files to root only
+   $secd->exists or $secd->mkpath;
    chown 0, $gid, $secd; chmod oct '0700', $secd;
 
    for ($secd->filter( sub { m{ \Q$extn\E \z }mx } )->all_files) {
@@ -215,7 +215,7 @@ sub init_suid_wrapper : method {
    return OK;
 }
 
-sub is_uid_zero {
+sub is_euid_zero {
    return $EFFECTIVE_USER_ID == 0 ? TRUE : FALSE;
 }
 
@@ -292,7 +292,7 @@ Thereafter run as a normal user
 
 If the normal user executing the commands is in the C<users> group then the
 first command will succeed, the second command should generate the
-permissioned denied response
+permission denied response
 
 =head1 Configuration and Environment
 
@@ -332,7 +332,7 @@ of the wrapper, compiles it, and sets it to run C<setuid> root. It also
 restricts permission on L</secure_dir> and it's contents so that only root
 can access them
 
-=head2 is_uid_zero
+=head2 is_euid_zero
 
 Returns true if the effective user id is zero, false otherwise
 

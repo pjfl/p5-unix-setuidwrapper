@@ -15,6 +15,12 @@ use File::Spec::Functions qw( catdir updir );
 
 lib->import( catdir( $Bin, updir, 'lib' ) ); # So that Perl can find U::SW
 
+# This is to avoid packaging a root owned directory and files
+my $cmd = 'cp -r examples/secure t && '
+        . 'chmod g-rx t/secure && chmod g-r t/secure/*';
+
+not -d 't/secure' and qx( $cmd );
+
 package YourApp::Admin; # This would be in it's own lib file
 
 use namespace::autoclean;
@@ -28,11 +34,15 @@ extends q(Class::Usul::Programs); # Framework for command line programs
 with    q(Unix::SetuidWrapper);
 
 # Add your own methods here. Your can call them from the command line
-sub test_cmd : method {
+sub not_allowed : method { # Calling this will result in acceess denied
    my $self = shift; $self->info( "User id $EFFECTIVE_USER_ID" ); return 0;
 }
 
-sub not_allowed : method {
+sub remove_secure_dir : method { # Cleanup the root owned secure dir
+   my $self = shift; $self->secure_dir->rmtree; return 0;
+}
+
+sub test_cmd : method { # Prints the effective user id
    my $self = shift; $self->info( "User id $EFFECTIVE_USER_ID" ); return 0;
 }
 
@@ -43,11 +53,14 @@ package main; # This script would be in the bin directory
 use YourApp::Admin;
 
 # This is only needed for interactive sessions
-$ENV{ENV} = '${START[(_$- = 1)+(_ = 0)-(_$- != _${-%%*i*})]}';
+#$ENV{ENV} = '${START[(_$- = 1)+(_ = 0)-(_$- != _${-%%*i*})]}';
 
+# Create the application instance
 my $app = YourApp::Admin->new_with_options
    (  config => { tempdir => 't', vardir => 't' }, noask  => 1, );
 
-$app->is_uid_zero or exec $app->wrapped_cmdline or exit 1;
+# If we are not running setuid root execute the wrapper
+$app->is_euid_zero or exec $app->wrapped_cmdline or exit 1;
 
+# We are running with euid zero so call the wanted method
 exit $app->run;

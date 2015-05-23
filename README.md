@@ -56,7 +56,7 @@ Thereafter run as a normal user
 
 If the normal user executing the commands is in the `users` group then the
 first command will succeed, the second command should generate the
-permissioned denied response
+permission denied response
 
 # Configuration and Environment
 
@@ -92,7 +92,7 @@ of the wrapper, compiles it, and sets it to run `setuid` root. It also
 restricts permission on ["secure\_dir"](#secure_dir) and it's contents so that only root
 can access them
 
-## is\_uid\_zero
+## is\_euid\_zero
 
 Returns true if the effective user id is zero, false otherwise
 
