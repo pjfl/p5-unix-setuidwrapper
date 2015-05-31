@@ -2,7 +2,7 @@ package Unix::SetuidWrapper;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 10 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 11 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( AS_PARA FAILED FALSE NUL OK SPC TRUE );
 use Class::Usul::Functions  qw( io is_member loginid untaint_path );
@@ -78,11 +78,11 @@ has '_unix_passwd'     => is => 'lazy', isa => Object, builder => sub {
 
 # Private functions
 my $_find_method = sub {
-   my ($want, $io) = @_;
+   my ($want, $file) = @_;
 
    return first { $_ eq $want }
           map   { (split m{ \s+ $HASH_CHAR }mx, "${_} ${HASH_CHAR}")[ 0 ] }
-          grep  { length } $io->chomp->getlines;
+          grep  { length } $file->chomp->getlines;
 };
 
 my $_split_perl5lib = sub {
@@ -408,19 +408,17 @@ static int  nlibs   = [% nlibs %];
 static char *libs[] = { [% libs %] };
 
 main( ac, av ) char **av; {
-   int offset = 1 + 2 * nlibs; char *args[ ac + offset ]; int i;
+   int offset = 1 + 2 * nlibs; char *args[ offset + ac ]; int i;
 
    args[ 0 ] = "suidperl";
+   args[ offset ] = PROGRAM_NAME;
+   args[ offset + ac ] = (char *) NULL;
 
    for (i = 0; i < nlibs; i++) {
       args[ 2 * i + 1 ] = "-I"; args[ 2 * i + 2 ] = libs[ i ];
    }
 
-   args[ offset ] = PROGRAM_NAME;
-
    for (i = 1; i < ac; i++) args[ offset + i ] = av[ i ];
 
-   args[ offset + ac ] = (char *) NULL;
-   setenv( "SECURE_DIR",  SECURE_DIR, 1 );
-   execv( EXECUTABLE_NAME, args );
+   setenv( "SECURE_DIR",  SECURE_DIR, 1 ); execv( EXECUTABLE_NAME, args );
 }
