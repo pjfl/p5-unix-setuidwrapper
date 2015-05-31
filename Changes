@@ -1,5 +1,6 @@
 Revision history for Unix::SetuidWrapper
 
+          - Release File::UnixAuth to CPAN
           - Skip tests on unsupported platforms
           - Fixed creating and removing t/secure
             No left over root owned directory
