@@ -20,6 +20,4 @@ t/10test_script.t
 t/admin.log
 t/boilerplate.pm
 t/script.log
-t/secure/root.sub
-t/secure/users.sub
 t/users.sub

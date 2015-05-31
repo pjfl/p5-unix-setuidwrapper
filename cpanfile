@@ -1,4 +1,4 @@
-requires "Class::Usul" => "v0.58.0";
+requires "Class::Usul" => "v0.60.0";
 requires "File::DataClass" => "v0.60.0";
 requires "File::UnixAuth" => "v0.22.0";
 requires "Moo" => "2.000001";

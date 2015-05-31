@@ -20,7 +20,7 @@ my $prereqs  = {
     'version' => '0.88'
   },
   'requires' => {
-    'Class::Usul' => 'v0.58.0',
+    'Class::Usul' => 'v0.60.0',
     'File::DataClass' => 'v0.60.0',
     'File::UnixAuth' => 'v0.22.0',
     'Moo' => '2.000001',
