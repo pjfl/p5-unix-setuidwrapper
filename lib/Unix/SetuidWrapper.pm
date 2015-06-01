@@ -2,7 +2,7 @@ package Unix::SetuidWrapper;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 12 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 13 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( AS_PARA FAILED FALSE NUL OK SPC TRUE );
 use Class::Usul::Functions  qw( io is_member loginid untaint_path );
@@ -163,7 +163,10 @@ around 'new_with_options' => sub {
    my $user = loginid $REAL_USER_ID;
    my $secd = untaint_path $ENV{SECURE_DIR};
    my $self = $orig->( @args );
-   my $want = $self->method or $self->exit_usage( 0 );
+   my $want = $self->can( 'select_method' )
+            ? $self->select_method : $self->method;
+
+   (not $want or $want eq 'run_chain') and $self->exit_usage( 0 );
 
    $EFFECTIVE_USER_ID == 0 or return $self;
 
@@ -282,13 +285,13 @@ from which the synopsis was taken
 
 Run once as root with
 
-   perl examples/admin -nc init_suid_wrapper
+   perl examples/admin -c init-suid-wrapper
 
 This creates the setuid root wrapper as a dotfile in the examples directory.
 Thereafter run as a normal user
 
-   perl examples/admin -nc test_cmd
-   perl examples/admin -nc not_allowed
+   perl examples/admin -c test-cmd
+   perl examples/admin -c not-allowed
 
 If the normal user executing the commands is in the C<users> group then the
 first command will succeed, the second command should generate the
