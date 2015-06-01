@@ -1,5 +1,6 @@
 Revision history for Unix::SetuidWrapper
 
+          - Updated prereqs
           - CUT::RunningMethods now exposes select_method
           - Release File::UnixAuth to CPAN
           - Skip tests on unsupported platforms

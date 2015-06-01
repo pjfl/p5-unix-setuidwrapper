@@ -46,13 +46,13 @@ from which the synopsis was taken
 
 Run once as root with
 
-    perl examples/admin -nc init_suid_wrapper
+    perl examples/admin -c init-suid-wrapper
 
 This creates the setuid root wrapper as a dotfile in the examples directory.
 Thereafter run as a normal user
 
-    perl examples/admin -nc test_cmd
-    perl examples/admin -nc not_allowed
+    perl examples/admin -c test-cmd
+    perl examples/admin -c not-allowed
 
 If the normal user executing the commands is in the `users` group then the
 first command will succeed, the second command should generate the

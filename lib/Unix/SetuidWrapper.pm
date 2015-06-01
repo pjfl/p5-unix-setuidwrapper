@@ -2,7 +2,7 @@ package Unix::SetuidWrapper;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 13 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 14 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( AS_PARA FAILED FALSE NUL OK SPC TRUE );
 use Class::Usul::Functions  qw( io is_member loginid untaint_path );
@@ -163,8 +163,7 @@ around 'new_with_options' => sub {
    my $user = loginid $REAL_USER_ID;
    my $secd = untaint_path $ENV{SECURE_DIR};
    my $self = $orig->( @args );
-   my $want = $self->can( 'select_method' )
-            ? $self->select_method : $self->method;
+   my $want = $self->select_method;
 
    (not $want or $want eq 'run_chain') and $self->exit_usage( 0 );
 
