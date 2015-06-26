@@ -59,6 +59,10 @@
 TAGS
 Thumbs.db
 \bipc_srlock
+^secure
+t/*.log
+t/admin.log
+t/users.sub
 
 # Avoid archives of this distribution
 \bUnix-SetuidWrapper-v?[\d\.\_]+

@@ -11,17 +11,20 @@ use Test::Requires { version => 0.88 };
 use Module::Build;
 use Sys::Hostname;
 
-my $perl_ver;
+my ($builder, $host, $notes, $osname, $perl_ver);
 
 BEGIN {
-   my $builder; my $host = lc hostname; my $notes = {}; my $osname = lc $^O;
+   $osname   = lc $^O;
+   $host     = lc hostname;
+   $builder  = eval { Module::Build->current };
+   $notes    = $builder ? $builder->notes : {};
+   $perl_ver = $notes->{min_perl_version} || 5.008;
 
-   $builder   = eval { Module::Build->current };
-   $builder and $notes = $builder->notes;
-   $perl_ver  = $notes->{min_perl_version} || 5.008;
-   $Bin =~ m{ : .+ : }mx and plan skip_all => 'Two colons in $Bin path';
-  ($osname eq 'mswin32' or $osname eq 'cygwin' or $osname eq 'darwin')
-      and plan skip_all => 'OS not supported';
+   if ($notes->{testing}) {
+      $Bin =~ m{ : .+ : }mx and plan skip_all => 'Two colons in $Bin path';
+      ($osname eq 'mswin32' or $osname eq 'cygwin' or $osname eq 'darwin')
+         and plan skip_all => 'OS not supported';
+   }
 }
 
 use Test::Requires "${perl_ver}";

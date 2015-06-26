@@ -1,8 +1,8 @@
-requires "Class::Usul" => "v0.61.0";
-requires "File::DataClass" => "v0.60.0";
-requires "File::UnixAuth" => "v0.22.0";
+requires "Class::Usul" => "v0.63.0";
+requires "File::DataClass" => "v0.63.0";
+requires "File::UnixAuth" => "v0.24.0";
 requires "Moo" => "2.000001";
-requires "namespace::autoclean" => "0.22";
+requires "namespace::autoclean" => "0.26";
 requires "perl" => "5.010001";
 
 on 'build' => sub {

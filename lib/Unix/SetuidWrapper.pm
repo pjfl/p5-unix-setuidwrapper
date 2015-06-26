@@ -2,7 +2,7 @@ package Unix::SetuidWrapper;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 14 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 15 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( AS_PARA FAILED FALSE NUL OK SPC TRUE );
 use Class::Usul::Functions  qw( io is_member loginid untaint_path );
@@ -10,6 +10,7 @@ use Class::Usul::Types      qw( ArrayRef HashRef Object SimpleStr );
 use Config;
 use English                 qw( -no_match_vars );
 use File::DataClass::Types  qw( Directory File );
+use File::Spec::Functions   qw( rootdir );
 use File::UnixAuth;
 use List::Util              qw( first );
 use Moo::Role;
@@ -56,6 +57,9 @@ has 'public_methods'   => is => 'ro',   isa => ArrayRef,  default => sub {
 
 has 'secure_dir'       => is => 'lazy', isa => Directory, coerce => TRUE,
    builder             => sub { [ $_[ 0 ]->config->vardir, 'secure' ] };
+
+has 'secure_path'      => is => 'lazy', isa => SimpleStr,
+   builder             => sub { $ENV{PATH} };
 
 # Private attributes
 has '_authorised_user' => is => 'rwp',  isa => SimpleStr, default => NUL,
@@ -108,12 +112,28 @@ my $_is_secure_file = sub {
    return ($uid == 0 && $mode == 0600) ? TRUE : FALSE;
 };
 
+my $_is_secure_path = sub {
+   my $path = shift;
+
+   while ($path ne rootdir) {
+      my ($uid, $mode) = $_stats->( $path );
+
+      (($mode & 020) != 020 and ($mode & 02) != 02) or return FALSE;
+      $path = $path->parent;
+   }
+
+   return TRUE;
+};
+
 # Private methods
 my $_auth_files = sub {
    my ($self, $secd, $user) = @_; my $extn = $self->config_file_extn;
 
    $_is_secure_dir->( $secd = $secd ? io( $secd ) : $self->secure_dir )
       or $self->fatal( 'Directory [_1] insecure', { args => [ $secd ] } );
+
+   $_is_secure_path->( $secd->parent )
+      or $self->fatal( 'Path [_1] insecure', { args => [ $secd->parent ] } );
 
    return grep { $_->exists && $_->is_file && $_is_secure_file->( $_ ) }
           map  { $secd->catfile( "${_}${extn}" ) }
@@ -124,6 +144,7 @@ my $_get_c_src = sub {
    my ($self, $prog)  = @_;
    my $csrc           = $SUID_WRAPPER_SRC;
    my $secd           = $self->secure_dir;
+   my $secp           = $self->secure_path;
    my ($nlibs, @libs) = $_split_perl5lib->();
    my $libs           = join ', ', map { '"'.$_.'"' } @libs;
 
@@ -132,6 +153,7 @@ my $_get_c_src = sub {
    $csrc =~ s{ \[% \s* nlibs           \s* %\] }{$nlibs}gimx;
    $csrc =~ s{ \[% \s* program_name    \s* %\] }{$prog}gimx;
    $csrc =~ s{ \[% \s* secure_dir      \s* %\] }{$secd}gimx;
+   $csrc =~ s{ \[% \s* secure_path     \s* %\] }{$secp}gimx;
 
    return $csrc;
 };
@@ -157,8 +179,7 @@ around 'new_with_options' => sub {
    my ($orig, @args) = @_;
 
    $ENV{CDPATH} = NUL; # For taint mode
-   $ENV{PATH  } = '/usr/local/sbin:/usr/local/bin:/usr/sbin:'
-                . '/usr/bin:/sbin:/bin';
+   $ENV{SECURE_PATH} and $ENV{PATH} = untaint_path $ENV{SECURE_PATH};
 
    my $user = loginid $REAL_USER_ID;
    my $secd = untaint_path $ENV{SECURE_DIR};
@@ -199,6 +220,7 @@ sub init_suid_wrapper : method {
    $self->output( 'Perl [_1]',             { args => [ $EXECUTABLE_NAME ] } );
    $self->output( 'Libs [_1]',             { args => [ $_ ] } ) for (@libs);
    $self->output( 'Secure directory [_1]', { args => [ $secd ] } );
+   $self->output( 'Secure path [_1]',      { args => [ $self->secure_path ] } );
    $self->yorn  ( '+Enable suid root', FALSE, TRUE, 0 ) or return OK;
    $self->info  ( 'Compiling [_1]', { args => [ $objf ], quiet => TRUE } );
 
@@ -405,6 +427,7 @@ __DATA__
 #define EXECUTABLE_NAME "[% executable_name %]"
 #define PROGRAM_NAME    "[% program_name %]"
 #define SECURE_DIR      "[% secure_dir %]"
+#define SECURE_PATH     "[% secure_path %]"
 
 static int  nlibs   = [% nlibs %];
 static char *libs[] = { [% libs %] };
@@ -422,5 +445,7 @@ main( ac, av ) char **av; {
 
    for (i = 1; i < ac; i++) args[ offset + i ] = av[ i ];
 
-   setenv( "SECURE_DIR",  SECURE_DIR, 1 ); execv( EXECUTABLE_NAME, args );
+   setenv( "SECURE_DIR",  SECURE_DIR,  1 );
+   setenv( "SECURE_PATH", SECURE_PATH, 1 );
+   execv( EXECUTABLE_NAME, args );
 }

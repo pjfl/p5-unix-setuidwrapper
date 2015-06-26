@@ -20,9 +20,9 @@ pm_to_blib
 README
 README.pod
 examples/.admin
+secure/*
 t/admin.log
 t/ipc_srlock*
-t/secure/*
 t/script.log
 t/users.sub
 *.tar.gz

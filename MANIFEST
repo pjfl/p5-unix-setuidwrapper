@@ -17,7 +17,4 @@ t/05kwalitee.t
 t/06yaml.t
 t/07podspelling.t
 t/10test_script.t
-t/admin.log
 t/boilerplate.pm
-t/script.log
-t/users.sub
