@@ -1,16 +1,10 @@
 Build.PL
 Changes
-LICENSE
 MANIFEST
-META.json
-META.yml
-README
-SIGNATURE
 examples/admin
 examples/secure/root.sub
 examples/secure/users.sub
 lib/Unix/SetuidWrapper.pm
-t/01always_pass.t
 t/02pod.t
 t/03podcoverage.t
 t/05kwalitee.t

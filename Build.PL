@@ -8,7 +8,6 @@ my $name     = 'Unix-SetuidWrapper'; $name =~ s{ - }{::}gmx;
 my $prereqs  = {
   'build_requires' => {
     'Module::Build' => '0.4004',
-    'Test::Requires' => '0.06',
     'version' => '0.88'
   },
   'configure_requires' => {
@@ -16,12 +15,20 @@ my $prereqs  = {
     'version' => '0.88'
   },
   'requires' => {
-    'Class::Usul' => 'v0.63.0',
-    'File::DataClass' => 'v0.63.0',
+    'Class::Usul' => 'v0.65.0',
+    'File::DataClass' => 'v0.66.0',
     'File::UnixAuth' => 'v0.24.0',
     'Moo' => '2.000001',
     'namespace::autoclean' => '0.26',
     'perl' => '5.010001'
+  },
+  'test_requires' => {
+    'File::Spec' => '0',
+    'Module::Build' => '0.4004',
+    'Module::Metadata' => '0',
+    'Sys::Hostname' => '0',
+    'Test::Requires' => '0.06',
+    'version' => '0.88'
   },
 };
 my $testing  = sub { $ENV{AUTOMATED_TESTING}
