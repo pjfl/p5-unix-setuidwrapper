@@ -1,5 +1,6 @@
 Revision history for Unix::SetuidWrapper
 
+          - Refactored coding style
           - Toolchain update
           - Check secdir path is not writable by group or other
           - Updated prereqs
